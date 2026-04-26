@@ -4,6 +4,11 @@
 
 #define EFLAGS_AC_BIT 0x00040000
 #define CR0_CACHE_DISABLE 0x60000000
+#define CR0_PAGING_BIT 0x80000000
+#define PTE_PRESENT 0x001
+#define PTE_RW 0x002
+#define PDE_ATTR (PTE_PRESENT | PTE_RW | 0x004) /* 0x007 */
+#define PTE_ATTR (PTE_PRESENT | PTE_RW | 0x004) /* 0x007 */
 
 unsigned int memtest(unsigned int start, unsigned int end)
 {
@@ -39,6 +44,76 @@ unsigned int memtest(unsigned int start, unsigned int end)
 	}
 
 	return i;
+}
+
+unsigned int init_paging(unsigned int memtotal)
+{
+	int i, j;
+	unsigned int *page_dir = (unsigned int *)PAGE_DIR_ADDR;
+	unsigned int *page_table;
+	unsigned int num_tables;
+	unsigned int cr0;
+	unsigned int vram_addr, vram_size;
+	int vram_pd_start, vram_pd_end;
+
+	/* 计算需要的页表数量（每个页表映射4MB） */
+	num_tables = (memtotal + 0x3fffff) / 0x400000;
+	if (num_tables > 128)
+	{
+		num_tables = 128; /* 最多映射512MB */
+	}
+	if (num_tables < 1)
+	{
+		num_tables = 1; /* 至少映射前4MB（内核所在区域） */
+	}
+
+	/* 清空页目录 */
+	for (i = 0; i < 1024; i++)
+	{
+		page_dir[i] = 0;
+	}
+
+	/* 设置页表，建立一一映射（虚拟地址=物理地址） */
+	page_table = (unsigned int *)PAGE_TABLE_ADDR;
+	for (i = 0; i < num_tables; i++)
+	{
+		for (j = 0; j < 1024; j++)
+		{
+			page_table[j] = (i * 0x400000 + j * 0x1000) | PTE_ATTR;
+		}
+		page_dir[i] = ((unsigned int)page_table) | PDE_ATTR;
+		page_table += 1024; /* 移动到下一个页表 */
+	}
+
+	/* 映射VRAM区域（VBE模式下VRAM可能在0xe0000000等高地址） */
+	vram_addr = *((unsigned int *)0x0ff8);
+	vram_size = (unsigned int)(*((unsigned short *)0x0ff4)) * (unsigned int)(*((unsigned short *)0x0ff6));
+	vram_pd_start = (int)(vram_addr >> 22);
+	vram_pd_end = (int)((vram_addr + vram_size + 0x3fffff) >> 22);
+	for (i = vram_pd_start; i < vram_pd_end; i++)
+	{
+		if (page_dir[i] == 0)
+		{
+			page_table = (unsigned int *)(PAGE_TABLE_ADDR + num_tables * 0x1000);
+			for (j = 0; j < 1024; j++)
+			{
+				page_table[j] = (i * 0x400000 + j * 0x1000) | PTE_ATTR;
+			}
+			page_dir[i] = ((unsigned int)page_table) | PDE_ATTR;
+			num_tables++;
+		}
+	}
+
+	/* 将页目录地址加载到CR3 */
+	store_cr3(PAGE_DIR_ADDR);
+
+	/* 设置CR0的bit31，启用分页 */
+	cr0 = load_cr0();
+	cr0 |= CR0_PAGING_BIT;
+	store_cr0(cr0);
+
+	/* 返回页表占用内存的末尾地址 */
+	return PAGE_TABLE_ADDR + num_tables * 0x1000;
 }
 
 void memman_init(struct MEMMAN *man)
