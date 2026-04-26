@@ -25,6 +25,7 @@ void load_idtr(int limit, int addr);
 int load_cr0(void);
 void store_cr0(int cr0);
 void store_cr3(int cr3);
+void switch_to_high_half(void);
 void load_tr(int tr);
 void asm_inthandler0c(void);
 void asm_inthandler0d(void);
@@ -91,6 +92,7 @@ struct GATE_DESCRIPTOR
 	short offset_high;
 };
 void init_gdtidt(void);
+void init_gdt_high(void);
 void set_segmdesc(struct SEGMENT_DESCRIPTOR *sd, unsigned int limit, int base, int ar);
 void set_gatedesc(struct GATE_DESCRIPTOR *gd, int offset, int selector, int ar);
 #define ADR_IDT 0x0026f800
@@ -142,6 +144,7 @@ int mouse_decode(struct MOUSE_DEC *mdec, unsigned char dat);
 #define MEMMAN_ADDR 0x003c0000
 #define PAGE_DIR_ADDR 0x00001000
 #define PAGE_TABLE_ADDR 0x00002000
+#define KERNEL_BASE 0xC0000000
 struct FREEINFO
 { /* あき情報 */
 	unsigned int addr, size;

@@ -20,7 +20,7 @@ void HariMain(void)
 	int mx, my, i, new_mx = -1, new_my = 0, new_wx = 0x7fffffff, new_wy = 0;
 	unsigned int memtotal, pt_end;
 	struct MOUSE_DEC mdec;
-	struct MEMMAN *memman = (struct MEMMAN *)MEMMAN_ADDR;
+	struct MEMMAN *memman = (struct MEMMAN *)(MEMMAN_ADDR + KERNEL_BASE);
 	unsigned char *buf_back, buf_mouse[256];
 	struct SHEET *sht_back, *sht_mouse;
 	struct TASK *task_a, *task;
@@ -63,12 +63,21 @@ void HariMain(void)
 	fifo32_init(&keycmd, 32, keycmd_buf, 0);
 
 	memtotal = memtest(0x00400000, 0xbfffffff);
-	pt_end = init_paging(memtotal); /* 启动分页，建立一一映射 */
+	pt_end = init_paging(memtotal); /* 启动分页，建立一一映射和高端映射 */
+
+	/* 切换到高端地址运行：代码段基址从0x280000变为0xC0280000 */
+	init_gdt_high();
+	switch_to_high_half();
+	/* 现在EIP运行在0xC0280000+offset，通过分页访问实际物理地址 */
+
+	/* 内存管理器使用虚拟地址（物理地址+0xC0000000） */
+	memman = (struct MEMMAN *)(MEMMAN_ADDR + KERNEL_BASE);
 	memman_init(memman);
-	memman_free(memman, pt_end, 0x0009e000 - (pt_end - 0x1000)); /* 跳过页表占用的内存 */
-	memman_free(memman, 0x00400000, memtotal - 0x00400000);
+	memman_free(memman, pt_end + KERNEL_BASE, 0x0009e000 - (pt_end - 0x1000)); /* 跳过页表占用的内存 */
+	memman_free(memman, 0x00400000 + KERNEL_BASE, memtotal - 0x00400000);
 
 	init_palette();
+	/* VRAM使用物理地址（已通过identity映射），VBE模式下VRAM在0xE0000000等高地址不能加KERNEL_BASE */
 	shtctl = shtctl_init(memman, binfo->vram, binfo->scrnx, binfo->scrny);
 	task_a = task_init(memman);
 	fifo.task = task_a;
@@ -436,7 +445,7 @@ void keywin_on(struct SHEET *key_win)
 
 struct TASK *open_constask(struct SHEET *sht, unsigned int memtotal)
 {
-	struct MEMMAN *memman = (struct MEMMAN *)MEMMAN_ADDR;
+	struct MEMMAN *memman = (struct MEMMAN *)(MEMMAN_ADDR + KERNEL_BASE);
 	struct TASK *task = task_alloc();
 	int *cons_fifo = (int *)memman_alloc_4k(memman, 128 * 4);
 	task->cons_stack = memman_alloc_4k(memman, 64 * 1024);
@@ -457,7 +466,7 @@ struct TASK *open_constask(struct SHEET *sht, unsigned int memtotal)
 
 struct SHEET *open_console(struct SHTCTL *shtctl, unsigned int memtotal)
 {
-	struct MEMMAN *memman = (struct MEMMAN *)MEMMAN_ADDR;
+	struct MEMMAN *memman = (struct MEMMAN *)(MEMMAN_ADDR + KERNEL_BASE);
 	struct SHEET *sht = sheet_alloc(shtctl);
 	unsigned char *buf = (unsigned char *)memman_alloc_4k(memman, 256 * 165);
 	sheet_setbuf(sht, buf, 256, 165, -1); /* 透明色なし */
@@ -470,7 +479,7 @@ struct SHEET *open_console(struct SHTCTL *shtctl, unsigned int memtotal)
 
 void close_constask(struct TASK *task)
 {
-	struct MEMMAN *memman = (struct MEMMAN *)MEMMAN_ADDR;
+	struct MEMMAN *memman = (struct MEMMAN *)(MEMMAN_ADDR + KERNEL_BASE);
 	task_sleep(task);
 	memman_free_4k(memman, task->cons_stack, 64 * 1024);
 	memman_free_4k(memman, (int)task->fifo.buf, 128 * 4);
@@ -480,7 +489,7 @@ void close_constask(struct TASK *task)
 
 void close_console(struct SHEET *sht)
 {
-	struct MEMMAN *memman = (struct MEMMAN *)MEMMAN_ADDR;
+	struct MEMMAN *memman = (struct MEMMAN *)(MEMMAN_ADDR + KERNEL_BASE);
 	struct TASK *task = sht->task;
 	memman_free_4k(memman, (int)sht->buf, 256 * 165);
 	sheet_free(sht);

@@ -12,6 +12,7 @@
 		GLOBAL	_io_load_eflags, _io_store_eflags
 		GLOBAL	_load_gdtr, _load_idtr
 		GLOBAL	_load_cr0, _store_cr0, _store_cr3
+		GLOBAL	_switch_to_high_half
 		GLOBAL	_load_tr
 		GLOBAL	_asm_inthandler20, _asm_inthandler21
 		GLOBAL	_asm_inthandler2c, _asm_inthandler0c
@@ -166,6 +167,14 @@ _asm_inthandler2c:
 		POP		DS
 		POP		ES
 		IRETD
+
+_switch_to_high_half:
+	; void switch_to_high_half(void);
+	; 在init_gdt_high()之后调用，通过远跳转刷新CS段寄存器
+	; 切换后代码段基址=0xC0280000，运行在高端虚拟地址
+		JMP		DWORD 2*8:switch_high_done
+	switch_high_done:
+		RET
 
 _asm_inthandler0c:
 		STI

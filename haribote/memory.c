@@ -73,7 +73,9 @@ unsigned int init_paging(unsigned int memtotal)
 		page_dir[i] = 0;
 	}
 
-	/* 设置页表，建立一一映射（虚拟地址=物理地址） */
+	/* 创建页表，建立一一映射和高端映射 */
+	/* 一一映射：虚拟地址=物理地址（用于过渡） */
+	/* 高端映射：虚拟地址=物理地址+0xC0000000 */
 	page_table = (unsigned int *)PAGE_TABLE_ADDR;
 	for (i = 0; i < num_tables; i++)
 	{
@@ -81,7 +83,10 @@ unsigned int init_paging(unsigned int memtotal)
 		{
 			page_table[j] = (i * 0x400000 + j * 0x1000) | PTE_ATTR;
 		}
+		/* PDE[i]：一一映射，虚拟 i*4MB → 物理 i*4MB */
 		page_dir[i] = ((unsigned int)page_table) | PDE_ATTR;
+		/* PDE[768+i]：高端映射，虚拟 0xC0000000+i*4MB → 物理 i*4MB */
+		page_dir[768 + i] = ((unsigned int)page_table) | PDE_ATTR;
 		page_table += 1024; /* 移动到下一个页表 */
 	}
 
